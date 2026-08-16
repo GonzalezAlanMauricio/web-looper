@@ -340,4 +340,11 @@ video {
 @media (max-width: 800px) {
   .player-controls { flex-wrap: wrap; }
   .control-group.center { order: 3; flex: 1 0 100%; margin-top: 0.5rem; }
+
+  .video-viewport { flex: 0 1 auto; max-height: 38vh; }
+  .player-ui { padding: 1.5rem 1rem 1.75rem; }
+  .timeline { height: 32px; }
+  .timeline-bg, .timeline-progress { height: 6px; }
+  .timeline-handle { width: 16px; height: 16px; }
+  .marker-btn { padding: 0.7rem 1.4rem !important; font-size: 1rem; }
 }
