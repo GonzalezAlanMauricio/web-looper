@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  Play, Pause, RotateCcw, Plus, Trash2, Scissors, 
-  Video, SkipBack, SkipForward, Maximize2, Volume2, 
+import {
+  Play, Pause, RotateCcw, Plus, Trash2, Scissors,
+  Video, SkipBack, SkipForward, Maximize2, Volume2,
   MapPin, Check, ChevronLeft, ChevronRight, Gauge,
-  Library, Save, FolderOpen
+  Library, Save, FolderOpen, Youtube
 } from 'lucide-react';
 import './App.css';
 
@@ -21,14 +21,47 @@ interface Project {
   segments: Segment[];
   lastModified: number;
   videoUrl?: string;
+  youtubeId?: string;
 }
 
 const COLORS = [
-  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#84cc16', '#f43f5e', '#6366f1'
 ];
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+
+// Lazily injects the YouTube IFrame API script and resolves once window.YT is ready.
+let youtubeApiPromise: Promise<any> | null = null;
+const loadYouTubeApi = (): Promise<any> => {
+  if (youtubeApiPromise) return youtubeApiPromise;
+  youtubeApiPromise = new Promise((resolve) => {
+    if ((window as any).YT && (window as any).YT.Player) {
+      resolve((window as any).YT);
+      return;
+    }
+    const previousCallback = (window as any).onYouTubeIframeAPIReady;
+    (window as any).onYouTubeIframeAPIReady = () => {
+      previousCallback?.();
+      resolve((window as any).YT);
+    };
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+  });
+  return youtubeApiPromise;
+};
+
+const extractYouTubeId = (url: string): string | null => {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtube\.com\/embed\/|youtu\.be\/)([\w-]{11})/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+};
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -48,6 +81,87 @@ function App() {
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
+  const ytPlayerRef = useRef<any>(null);
+
+  const activeProject = projects.find(p => p.id === activeProjectId) || null;
+  const isYouTubeProject = !!activeProject?.youtubeId;
+
+  const getPlayerTime = (): number => {
+    if (isYouTubeProject) return ytPlayerRef.current?.getCurrentTime?.() ?? 0;
+    return videoRef.current?.currentTime ?? 0;
+  };
+
+  const playerSeek = (time: number) => {
+    const clamped = Math.max(0, duration ? Math.min(time, duration) : time);
+    if (isYouTubeProject) {
+      ytPlayerRef.current?.seekTo?.(clamped, true);
+      setCurrentTime(clamped);
+    } else if (videoRef.current) {
+      videoRef.current.currentTime = clamped;
+    }
+  };
+
+  const playerPlay = () => {
+    if (isYouTubeProject) ytPlayerRef.current?.playVideo?.();
+    else videoRef.current?.play();
+  };
+
+  const playerPause = () => {
+    if (isYouTubeProject) ytPlayerRef.current?.pauseVideo?.();
+    else videoRef.current?.pause();
+  };
+
+  // Mount/unmount the YouTube IFrame player when switching to/from a YouTube project
+  useEffect(() => {
+    if (!isYouTubeProject || !activeProject?.youtubeId) return;
+    let cancelled = false;
+
+    loadYouTubeApi().then((YT) => {
+      if (cancelled || !ytContainerRef.current) return;
+      ytPlayerRef.current = new YT.Player(ytContainerRef.current, {
+        videoId: activeProject.youtubeId,
+        playerVars: { playsinline: 1, controls: 0, rel: 0, modestbranding: 1 },
+        events: {
+          onReady: (e: any) => {
+            setDuration(e.target.getDuration());
+            e.target.setPlaybackRate(playbackSpeed);
+          },
+          onStateChange: (e: any) => {
+            setIsPlaying(e.data === (window as any).YT.PlayerState.PLAYING);
+            if (e.data === (window as any).YT.PlayerState.PLAYING) {
+              setDuration(e.target.getDuration());
+            }
+          },
+        },
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      ytPlayerRef.current?.destroy?.();
+      ytPlayerRef.current = null;
+      setIsPlaying(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, isYouTubeProject]);
+
+  // Poll currentTime and enforce segment looping for YouTube (no timeupdate event available)
+  useEffect(() => {
+    if (!isYouTubeProject || !isPlaying) return;
+    const interval = setInterval(() => {
+      const time = ytPlayerRef.current?.getCurrentTime?.() ?? 0;
+      setCurrentTime(time);
+
+      if (activeSegmentId) {
+        const segment = segments.find(s => s.id === activeSegmentId);
+        if (segment && time >= segment.end) {
+          ytPlayerRef.current?.seekTo?.(segment.start, true);
+        }
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [isYouTubeProject, isPlaying, activeSegmentId, segments]);
 
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
@@ -113,6 +227,19 @@ function App() {
     const projectList = currentProjects || projects;
     const project = projectList.find(p => p.id === id);
     if (!project) return;
+
+    if (project.youtubeId) {
+      if (videoSrc && videoSrc.startsWith('blob:')) URL.revokeObjectURL(videoSrc);
+      setVideoError(false);
+      setVideoSrc(null);
+      setSegments(project.segments);
+      setActiveProjectId(id);
+      localStorage.setItem('looper_active_project_id', id);
+      setMarkIn(null);
+      setCurrentTime(0);
+      setDuration(0);
+      return;
+    }
 
     if (project.videoUrl) {
       if (videoSrc && videoSrc.startsWith('blob:')) URL.revokeObjectURL(videoSrc);
@@ -248,6 +375,56 @@ function App() {
     }
   };
 
+  const handleAddYouTube = async () => {
+    const url = window.prompt('Paste a YouTube video URL');
+    if (!url) return;
+
+    const youtubeId = extractYouTubeId(url.trim());
+    if (!youtubeId) {
+      alert('Could not find a YouTube video ID in that URL');
+      return;
+    }
+
+    const id = Math.random().toString(36).substring(2, 11);
+    const newProject: Project = {
+      id,
+      name: `YouTube: ${youtubeId}`,
+      segments: [],
+      lastModified: Date.now(),
+      youtubeId,
+    };
+
+    const updatedProjects = [newProject, ...projects];
+    setProjects(updatedProjects);
+    setSegments([]);
+    setActiveProjectId(id);
+    setVideoError(false);
+    setVideoSrc(null);
+    setCurrentTime(0);
+    setDuration(0);
+    setMarkIn(null);
+    localStorage.setItem('looper_active_project_id', id);
+    localStorage.setItem('looper_projects_metadata', JSON.stringify(updatedProjects));
+
+    // Fetch the real video title via YouTube's oEmbed endpoint (no API key needed)
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${youtubeId}`)}&format=json`;
+      const res = await fetch(oembedUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title) {
+          setProjects(prev => {
+            const withTitle = prev.map(p => p.id === id ? { ...p, name: data.title } : p);
+            localStorage.setItem('looper_projects_metadata', JSON.stringify(withTitle));
+            return withTitle;
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch YouTube video title', e);
+    }
+  };
+
   const handleRelinkVideo = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -283,9 +460,9 @@ function App() {
   };
 
   const handleMarkPoint = () => {
-    if (!videoRef.current) return;
-    const time = videoRef.current.currentTime;
-    
+    if (!isYouTubeProject && !videoRef.current) return;
+    const time = getPlayerTime();
+
     if (markIn === null) {
       setMarkIn(time);
     } else {
@@ -323,9 +500,9 @@ function App() {
     } else {
       setActiveSegmentId(id);
       const segment = segments.find(s => s.id === id);
-      if (segment && videoRef.current) {
-        videoRef.current.currentTime = segment.start;
-        videoRef.current.play();
+      if (segment) {
+        playerSeek(segment.start);
+        playerPlay();
         setIsPlaying(true);
       }
     }
@@ -345,9 +522,7 @@ function App() {
   }, [activeSegmentId, segments]);
 
   const seek = (time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-    }
+    playerSeek(time);
   };
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -367,7 +542,9 @@ function App() {
 
   const changeSpeed = (speed: number) => {
     setPlaybackSpeed(speed);
-    if (videoRef.current) {
+    if (isYouTubeProject) {
+      ytPlayerRef.current?.setPlaybackRate?.(speed);
+    } else if (videoRef.current) {
       videoRef.current.playbackRate = speed;
     }
   };
@@ -394,6 +571,9 @@ function App() {
               <Plus size={18} />
               <input type="file" accept="video/*" onChange={handleFileChange} hidden />
             </label>
+            <button className="icon-btn" title="Add YouTube Video" onClick={handleAddYouTube}>
+              <Youtube size={18} />
+            </button>
           </div>
           <div className="projects-list">
             {projects.length === 0 && <p className="empty-msg">No projects yet</p>}
@@ -414,8 +594,8 @@ function App() {
             <div className="section-header">
               <h3><Scissors size={16} /> Segments</h3>
               <button className="icon-btn" onClick={() => {
-                if (!videoRef.current) return;
-                const t = videoRef.current.currentTime;
+                if (!isYouTubeProject && !videoRef.current) return;
+                const t = getPlayerTime();
                 setSegments([...segments, {
                   id: Math.random().toString(36).substring(2, 11),
                   start: t,
@@ -489,7 +669,7 @@ function App() {
       )}
 
       <main className="main-stage">
-        {activeProjectId && (videoError || !videoSrc) && projects.some(p => p.id === activeProjectId) ? (
+        {activeProjectId && !isYouTubeProject && (videoError || !videoSrc) && projects.some(p => p.id === activeProjectId) ? (
           <div className="hero">
             <div className="hero-content">
               <div className="hero-icon-wrapper">
@@ -503,7 +683,7 @@ function App() {
               </label>
             </div>
           </div>
-        ) : !videoSrc ? (
+        ) : !videoSrc && !isYouTubeProject ? (
           <div className="hero">
             <div className="hero-content">
               <div className="hero-icon-wrapper">
@@ -520,19 +700,29 @@ function App() {
         ) : (
           <div className="player-container" ref={playerContainerRef}>
             <div className="video-viewport">
-              <video
-                ref={videoRef}
-                src={videoSrc}
-                playsInline
-                webkit-playsinline="true"
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onError={() => setVideoError(true)}
-                onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
-              />
-              
+              {isYouTubeProject ? (
+                <div className="youtube-embed-wrapper">
+                  <div ref={ytContainerRef} className="youtube-player" />
+                  <div
+                    className="youtube-click-overlay"
+                    onClick={() => (isPlaying ? playerPause() : playerPlay())}
+                  />
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  src={videoSrc ?? undefined}
+                  playsInline
+                  webkit-playsinline="true"
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onError={() => setVideoError(true)}
+                  onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
+                />
+              )}
+
               {activeSegmentId && (
                 <div className="loop-indicator">
                   <RotateCcw size={16} className="spinning" />
@@ -589,7 +779,7 @@ function App() {
               <div className="player-controls">
                 <div className="control-group">
                   <button onClick={() => seek(currentTime - 5)}><SkipBack size={20} /></button>
-                  <button className="play-btn" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>
+                  <button className="play-btn" onClick={() => (isPlaying ? playerPause() : playerPlay())}>
                     {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}
                   </button>
                   <button onClick={() => seek(currentTime + 5)}><SkipForward size={20} /></button>
