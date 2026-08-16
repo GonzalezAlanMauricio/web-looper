@@ -42,7 +42,8 @@ function App() {
   const [markIn, setMarkIn] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  
+  const [videoError, setVideoError] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -115,6 +116,7 @@ function App() {
 
     if (project.videoUrl) {
       if (videoSrc && videoSrc.startsWith('blob:')) URL.revokeObjectURL(videoSrc);
+      setVideoError(false);
       setVideoSrc(project.videoUrl);
       setSegments(project.segments);
       setActiveProjectId(id);
@@ -128,12 +130,21 @@ function App() {
       const transaction = db.transaction(['videos'], 'readonly');
       const store = transaction.objectStore('videos');
       const getRequest = store.get(id);
-      
+
       getRequest.onsuccess = () => {
         if (getRequest.result) {
           if (videoSrc) URL.revokeObjectURL(videoSrc);
           const file = getRequest.result;
+          setVideoError(false);
           setVideoSrc(URL.createObjectURL(file));
+          setSegments(project.segments);
+          setActiveProjectId(id);
+          localStorage.setItem('looper_active_project_id', id);
+          setMarkIn(null);
+        } else {
+          // No cached video for this project either (e.g. imported JSON whose URL 404s)
+          setVideoError(true);
+          setVideoSrc(null);
           setSegments(project.segments);
           setActiveProjectId(id);
           localStorage.setItem('looper_active_project_id', id);
@@ -157,6 +168,7 @@ function App() {
     if (activeProjectId === id) {
       setActiveProjectId(null);
       setVideoSrc(null);
+      setVideoError(false);
       setSegments([]);
       localStorage.removeItem('looper_active_project_id');
     }
@@ -182,6 +194,7 @@ function App() {
         setProjects(updatedProjects);
         setSegments([]);
         setActiveProjectId(id);
+        setVideoError(false);
         setVideoSrc(URL.createObjectURL(file));
         localStorage.setItem('looper_active_project_id', id);
         localStorage.setItem('looper_projects_metadata', JSON.stringify(updatedProjects));
@@ -225,12 +238,40 @@ function App() {
       setProjects(updatedProjects);
       setSegments(segments);
       setActiveProjectId(id);
+      setVideoError(false);
       setVideoSrc(data.video);
       localStorage.setItem('looper_active_project_id', id);
       localStorage.setItem('looper_projects_metadata', JSON.stringify(updatedProjects));
     } catch (e) {
       console.error('Failed to import project JSON', e);
       alert(`Failed to import project: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const handleRelinkVideo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !activeProjectId) return;
+
+    try {
+      const db = await getDB();
+      const transaction = db.transaction(['videos'], 'readwrite');
+      transaction.objectStore('videos').put(file, activeProjectId);
+
+      if (videoSrc && videoSrc.startsWith('blob:')) URL.revokeObjectURL(videoSrc);
+      setVideoError(false);
+      setVideoSrc(URL.createObjectURL(file));
+
+      // Drop the stale videoUrl so future loads read from IndexedDB instead
+      setProjects(prev => {
+        const updated = prev.map(p =>
+          p.id === activeProjectId ? { ...p, videoUrl: undefined } : p
+        );
+        localStorage.setItem('looper_projects_metadata', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (e) {
+      console.error('Failed to relink video to IndexedDB', e);
     }
   };
 
@@ -448,7 +489,21 @@ function App() {
       )}
 
       <main className="main-stage">
-        {!videoSrc ? (
+        {activeProjectId && (videoError || !videoSrc) && projects.some(p => p.id === activeProjectId) ? (
+          <div className="hero">
+            <div className="hero-content">
+              <div className="hero-icon-wrapper">
+                <Video size={48} />
+              </div>
+              <h2>Video not found</h2>
+              <p>This project's video couldn't be loaded on this device. Select the matching video file to relink it — segments are preserved.</p>
+              <label className="cta-button">
+                <Plus size={20} /> Select Video File
+                <input type="file" accept="video/*" onChange={handleRelinkVideo} hidden />
+              </label>
+            </div>
+          </div>
+        ) : !videoSrc ? (
           <div className="hero">
             <div className="hero-content">
               <div className="hero-icon-wrapper">
@@ -472,6 +527,7 @@ function App() {
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onError={() => setVideoError(true)}
                 onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
               />
               
