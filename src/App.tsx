@@ -520,9 +520,11 @@ function App() {
         ) : (
           <div className="player-container" ref={playerContainerRef}>
             <div className="video-viewport">
-              <video 
+              <video
                 ref={videoRef}
                 src={videoSrc}
+                playsInline
+                webkit-playsinline="true"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
