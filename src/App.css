@@ -19,6 +19,7 @@ body {
   color: var(--text-main);
   overflow: hidden;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   font-family: system-ui, -apple-system, sans-serif;
 }
@@ -363,8 +364,16 @@ video {
   .player-controls { flex-wrap: wrap; }
   .control-group.center { order: 3; flex: 1 0 100%; margin-top: 0.5rem; }
 
-  .video-viewport { flex: 0 1 auto; max-height: 38vh; }
-  .player-ui { padding: 1.5rem 1rem 1.75rem; }
+  .player-container { overflow-y: auto; }
+  .video-viewport {
+    flex: none;
+    height: 40vh;
+    min-height: 200px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .player-ui { padding: 1.5rem 1rem 1.75rem; flex-shrink: 0; }
   .timeline { height: 32px; }
   .timeline-bg, .timeline-progress { height: 6px; }
   .timeline-handle { width: 16px; height: 16px; }
