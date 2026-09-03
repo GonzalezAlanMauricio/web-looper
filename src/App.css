@@ -18,10 +18,22 @@ body {
   background-color: var(--bg-main);
   color: var(--text-main);
   overflow: hidden;
+  overscroll-behavior: none;
   height: 100vh;
   height: 100dvh;
   width: 100vw;
   font-family: system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input {
+  /* iOS Safari auto-zooms the page when a focused input's font-size is under 16px */
+  font-size: 16px;
 }
 
 #root {
@@ -81,8 +93,8 @@ body {
 
 .expand-btn {
   position: fixed;
-  left: 0.75rem;
-  top: 0.75rem;
+  left: calc(0.75rem + env(safe-area-inset-left));
+  top: calc(0.75rem + env(safe-area-inset-top));
   z-index: 100;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -92,6 +104,8 @@ body {
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
+
+.sidebar-backdrop { display: none; }
 
 /* Sidebar Sections */
 .sidebar-section {
@@ -174,7 +188,7 @@ body {
 
 .segment-main { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
 .segment-color-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--segment-color); flex-shrink: 0; }
-.segment-name-input { background: transparent; border: none; color: white; font-weight: 600; font-size: 0.8rem; width: 100%; outline: none; }
+.segment-name-input { background: transparent; border: none; color: white; font-weight: 600; font-size: max(0.8rem, 16px); width: 100%; outline: none; }
 
 .segment-times { font-size: 0.65rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.4rem; }
 .adjust-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
@@ -263,7 +277,7 @@ video {
 
 .player-ui {
   background: var(--bg-sidebar);
-  padding: 0.75rem 1.25rem;
+  padding: 0.75rem max(1.25rem, env(safe-area-inset-right)) calc(0.75rem + env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -378,22 +392,76 @@ video {
   border: 1px solid var(--border);
 }
 
+/* iOS Safari fallback: the real Fullscreen API isn't available for a <div> there,
+   so this fixed overlay stands in for it, still respecting the notch/home indicator. */
+.player-container.fake-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 @media (max-width: 800px) {
+  /* Sidebar becomes a slide-in overlay instead of pushing the video off-screen */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(86vw, 320px);
+    height: 100%;
+    height: 100dvh;
+    z-index: 150;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar-collapsed .sidebar {
+    width: min(86vw, 320px);
+    margin-left: 0;
+    border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 140;
+  }
+
+  /* Bigger touch targets throughout (Apple HIG recommends ~44pt hit areas) */
+  .icon-btn, .icon-btn-label { width: 40px; height: 40px; }
+  .collapse-btn { padding: 0.6rem; }
+  .delete-project-btn { padding: 0.5rem; margin: -0.5rem; }
+  .project-item { padding: 0.7rem 0.6rem; }
+  .adjust-buttons button { padding: 0.5rem 0; font-size: 0.7rem; }
+  .segment-actions button { padding: 0.6rem; font-size: 0.8rem; }
+  .control-group button { padding: 0.6rem; }
+  .count-in-btn { padding: 0.55rem 0.8rem; font-size: 0.8rem; }
+  .speed-selector { padding: 0.4rem 0.6rem; }
+  .speed-selector select { font-size: 0.9rem; }
+
   .player-controls { flex-wrap: wrap; }
   .control-group.center { order: 3; flex: 1 0 100%; margin-top: 0.5rem; }
 
   .player-container { overflow-y: auto; }
   .video-viewport {
     flex: none;
-    height: 40vh;
-    min-height: 200px;
+    height: 45vh;
+    min-height: 220px;
     position: sticky;
     top: 0;
     z-index: 1;
   }
-  .player-ui { padding: 1.5rem 1rem 1.75rem; flex-shrink: 0; }
-  .timeline { height: 32px; }
+  .player-ui {
+    padding: 1.5rem max(1rem, env(safe-area-inset-right)) calc(1.75rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    flex-shrink: 0;
+  }
+  .timeline { height: 36px; touch-action: none; }
   .timeline-bg, .timeline-progress { height: 6px; }
-  .timeline-handle { width: 16px; height: 16px; }
+  .timeline-handle { width: 18px; height: 18px; }
   .marker-btn { padding: 0.7rem 1.4rem !important; font-size: 1rem; }
 }

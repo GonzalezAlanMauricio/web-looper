@@ -78,9 +78,14 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [markIn, setMarkIn] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // On phones the sidebar is a full-screen overlay, so start with it closed;
+  // on desktop it's a permanent side panel, so start with it open.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 800px)').matches
+  );
   const [videoError, setVideoError] = useState(false);
   const [countInEnabled, setCountInEnabled] = useState(false);
+  const [isFakeFullscreen, setIsFakeFullscreen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -90,6 +95,7 @@ function App() {
   const ytPlayerRef = useRef<any>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const countInPendingRef = useRef(false);
+  const isScrubbingRef = useRef(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const isYouTubeProject = !!activeProject?.youtubeId;
@@ -219,8 +225,17 @@ function App() {
     return () => clearInterval(interval);
   }, [isYouTubeProject, isPlaying, activeSegmentId, segments, countInEnabled]);
 
+  // iOS Safari doesn't support the Fullscreen API on arbitrary elements (only <video>),
+  // so fall back to a CSS-only fixed overlay that covers the viewport there.
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
+    const supportsFullscreen = !!(document.fullscreenEnabled || (document as any).webkitFullscreenEnabled);
+
+    if (!supportsFullscreen) {
+      setIsFakeFullscreen(v => !v);
+      return;
+    }
+
     if (!document.fullscreenElement) {
       playerContainerRef.current.requestFullscreen().catch(err => {
         console.error(`Error attempting to enable full-screen mode: ${err.message}`);
@@ -585,12 +600,31 @@ function App() {
     playerSeek(time);
   };
 
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const seekFromClientX = (clientX: number) => {
     if (!timelineRef.current || !duration) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const x = Math.min(Math.max(clientX - rect.left, 0), rect.width);
     const percentage = x / rect.width;
     seek(percentage * duration);
+  };
+
+  // Pointer events (not click) so the timeline can be scrubbed by dragging,
+  // which matters most on touch where a single tap is hard to place precisely.
+  const handleTimelinePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!duration) return;
+    isScrubbingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekFromClientX(e.clientX);
+  };
+
+  const handleTimelinePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    seekFromClientX(e.clientX);
+  };
+
+  const handleTimelinePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
   const formatTime = (time: number) => {
@@ -722,6 +756,10 @@ function App() {
         )}
       </aside>
 
+      {!isSidebarCollapsed && (
+        <div className="sidebar-backdrop" onClick={() => setIsSidebarCollapsed(true)} />
+      )}
+
       {isSidebarCollapsed && (
         <button className="expand-btn" onClick={() => setIsSidebarCollapsed(false)}>
           <ChevronRight size={24} />
@@ -758,7 +796,7 @@ function App() {
             </div>
           </div>
         ) : (
-          <div className="player-container" ref={playerContainerRef}>
+          <div className={`player-container ${isFakeFullscreen ? 'fake-fullscreen' : ''}`} ref={playerContainerRef}>
             <div className="video-viewport">
               {isYouTubeProject ? (
                 <div className="youtube-embed-wrapper">
@@ -797,10 +835,13 @@ function App() {
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
-                <div 
-                  className="timeline" 
+                <div
+                  className="timeline"
                   ref={timelineRef}
-                  onClick={handleTimelineClick}
+                  onPointerDown={handleTimelinePointerDown}
+                  onPointerMove={handleTimelinePointerMove}
+                  onPointerUp={handleTimelinePointerUp}
+                  onPointerCancel={handleTimelinePointerUp}
                 >
                   <div className="timeline-bg" />
                   <div 
