@@ -311,6 +311,24 @@ video {
   white-space: nowrap;
 }
 
+.count-in-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #2d2d39;
+  color: var(--text-dim);
+  border: none;
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: 0.2s;
+}
+.count-in-btn:hover { color: white; }
+.count-in-btn.active { background: var(--success); color: white; }
+
 .speed-selector {
   display: flex;
   align-items: center;

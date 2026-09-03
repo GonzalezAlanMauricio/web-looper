@@ -3,7 +3,7 @@ import {
   Play, Pause, RotateCcw, Plus, Trash2, Scissors,
   Video, SkipBack, SkipForward, Maximize2, Volume2,
   MapPin, Check, ChevronLeft, ChevronRight, Gauge,
-  Library, Save, FolderOpen, Youtube
+  Library, Save, FolderOpen, Youtube, Bell
 } from 'lucide-react';
 import './App.css';
 
@@ -30,6 +30,10 @@ const COLORS = [
 ];
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+
+const COUNT_IN_BEEPS = 3;
+const COUNT_IN_INTERVAL = 0.3; // seconds between beeps
+const COUNT_IN_BEEP_DURATION = 0.08; // seconds each beep rings for
 
 // Lazily injects the YouTube IFrame API script and resolves once window.YT is ready.
 let youtubeApiPromise: Promise<any> | null = null;
@@ -76,6 +80,7 @@ function App() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [countInEnabled, setCountInEnabled] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -83,6 +88,8 @@ function App() {
   const isInitialLoad = useRef(true);
   const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const countInPendingRef = useRef(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const isYouTubeProject = !!activeProject?.youtubeId;
@@ -110,6 +117,51 @@ function App() {
   const playerPause = () => {
     if (isYouTubeProject) ytPlayerRef.current?.pauseVideo?.();
     else videoRef.current?.pause();
+  };
+
+  const getAudioContext = (): AudioContext => {
+    if (!audioCtxRef.current) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      audioCtxRef.current = new AudioCtx();
+    }
+    return audioCtxRef.current;
+  };
+
+  // Schedules three short beeps and calls onComplete once they've finished ringing
+  const playCountInBeeps = (onComplete: () => void) => {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const startTime = ctx.currentTime + 0.05;
+    for (let i = 0; i < COUNT_IN_BEEPS; i++) {
+      const beepTime = startTime + i * COUNT_IN_INTERVAL;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0, beepTime);
+      gain.gain.linearRampToValueAtTime(0.35, beepTime + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepTime + COUNT_IN_BEEP_DURATION);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(beepTime);
+      osc.stop(beepTime + COUNT_IN_BEEP_DURATION + 0.02);
+    }
+
+    const totalDelayMs = (startTime - ctx.currentTime + COUNT_IN_BEEPS * COUNT_IN_INTERVAL) * 1000;
+    window.setTimeout(onComplete, totalDelayMs);
+  };
+
+  // Pauses at the loop's start point, plays the count-in beeps, then resumes playback
+  const triggerCountIn = (segmentStart: number, resume: () => void) => {
+    if (countInPendingRef.current) return;
+    countInPendingRef.current = true;
+    playerPause();
+    playerSeek(segmentStart);
+    playCountInBeeps(() => {
+      countInPendingRef.current = false;
+      resume();
+    });
   };
 
   // Mount/unmount the YouTube IFrame player when switching to/from a YouTube project
@@ -156,12 +208,16 @@ function App() {
       if (activeSegmentId) {
         const segment = segments.find(s => s.id === activeSegmentId);
         if (segment && time >= segment.end) {
-          ytPlayerRef.current?.seekTo?.(segment.start, true);
+          if (countInEnabled) {
+            triggerCountIn(segment.start, () => ytPlayerRef.current?.playVideo?.());
+          } else {
+            ytPlayerRef.current?.seekTo?.(segment.start, true);
+          }
         }
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [isYouTubeProject, isPlaying, activeSegmentId, segments]);
+  }, [isYouTubeProject, isPlaying, activeSegmentId, segments, countInEnabled]);
 
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
@@ -516,10 +572,14 @@ function App() {
     if (activeSegmentId) {
       const segment = segments.find(s => s.id === activeSegmentId);
       if (segment && time >= segment.end) {
-        videoRef.current.currentTime = segment.start;
+        if (countInEnabled) {
+          triggerCountIn(segment.start, () => videoRef.current?.play());
+        } else {
+          videoRef.current.currentTime = segment.start;
+        }
       }
     }
-  }, [activeSegmentId, segments]);
+  }, [activeSegmentId, segments, countInEnabled]);
 
   const seek = (time: number) => {
     playerSeek(time);
@@ -799,6 +859,14 @@ function App() {
                 </div>
 
                 <div className="control-group end">
+                  <button
+                    className={`count-in-btn ${countInEnabled ? 'active' : ''}`}
+                    title="Count-in: suena 3 beeps antes de que el loop se reinicie"
+                    onClick={() => setCountInEnabled(v => !v)}
+                  >
+                    <Bell size={16} />
+                    Count-in
+                  </button>
                   <div className="speed-selector">
                     <Gauge size={20} />
                     <select value={playbackSpeed} onChange={(e) => changeSpeed(parseFloat(e.target.value))}>
