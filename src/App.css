@@ -282,6 +282,38 @@ video {
   flex-shrink: 0;
 }
 
+/* Loop-chip strip: a quick way to switch between loops without opening the
+   sidebar. Full segment editing still lives there — this is just for picking. */
+.loop-strip {
+  display: none;
+}
+
+.loop-chip {
+  flex-shrink: 0;
+  scroll-snap-align: center;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg-card);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.loop-chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--segment-color); flex-shrink: 0; }
+
+.loop-chip.active {
+  background: var(--segment-color);
+  border-color: var(--segment-color);
+  color: white;
+}
+.loop-chip.active .loop-chip-dot { background: white; }
+
 /* Timeline */
 .timeline-wrapper { margin-bottom: 0.5rem; }
 .time-info { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-dim); font-family: monospace; margin-bottom: 2px; }
@@ -456,6 +488,26 @@ video {
     top: 0;
     z-index: 1;
   }
+
+  /* Pinned directly under the video (sticky at the same offset the video
+     sticks at) so it's always reachable without scrolling past it. */
+  .loop-strip {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 0.6rem max(1rem, env(safe-area-inset-right)) 0.6rem max(1rem, env(safe-area-inset-left));
+    position: sticky;
+    top: max(45vh, 220px);
+    z-index: 1;
+  }
+  .loop-strip::-webkit-scrollbar { display: none; }
+
   .player-ui {
     padding: 1.5rem max(1rem, env(safe-area-inset-right)) calc(1.75rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
     flex-shrink: 0;

@@ -96,6 +96,7 @@ function App() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const countInPendingRef = useRef(false);
   const isScrubbingRef = useRef(false);
+  const loopChipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const isYouTubeProject = !!activeProject?.youtubeId;
@@ -565,6 +566,16 @@ function App() {
     }));
   };
 
+  // Keeps the mobile loop-chip strip centered on whichever loop is active
+  useEffect(() => {
+    if (!activeSegmentId) return;
+    loopChipRefs.current[activeSegmentId]?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    });
+  }, [activeSegmentId]);
+
   const toggleLoop = (id: string) => {
     if (activeSegmentId === id) {
       setActiveSegmentId(null);
@@ -828,6 +839,24 @@ function App() {
                 </div>
               )}
             </div>
+
+            {segments.length > 0 && (
+              <div className="loop-strip">
+                {segments.map(s => (
+                  <button
+                    key={s.id}
+                    ref={(el) => { loopChipRefs.current[s.id] = el; }}
+                    className={`loop-chip ${activeSegmentId === s.id ? 'active' : ''}`}
+                    style={{ '--segment-color': s.color } as any}
+                    onClick={() => toggleLoop(s.id)}
+                  >
+                    {activeSegmentId === s.id && <RotateCcw size={13} className="spinning" />}
+                    <span className="loop-chip-dot" />
+                    <span className="loop-chip-name">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="player-ui">
               <div className="timeline-wrapper">
