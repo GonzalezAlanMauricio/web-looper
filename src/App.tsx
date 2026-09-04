@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play, Pause, RotateCcw, Plus, Trash2, Scissors,
   Video, SkipBack, SkipForward, Maximize2, Volume2,
-  MapPin, Check, ChevronLeft, ChevronRight, Gauge,
-  Library, Save, FolderOpen, Youtube, Bell
+  MapPin, Check, ChevronLeft, ChevronRight, ChevronDown, Gauge,
+  Library, Save, FolderOpen, Youtube, Bell, X
 } from 'lucide-react';
 import './App.css';
 
@@ -86,6 +86,8 @@ function App() {
   const [videoError, setVideoError] = useState(false);
   const [countInEnabled, setCountInEnabled] = useState(false);
   const [isFakeFullscreen, setIsFakeFullscreen] = useState(false);
+  // Which loop chip (if any) has its edit controls expanded below the strip
+  const [expandedSegmentId, setExpandedSegmentId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -96,7 +98,7 @@ function App() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const countInPendingRef = useRef(false);
   const isScrubbingRef = useRef(false);
-  const loopChipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const loopChipRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const isYouTubeProject = !!activeProject?.youtubeId;
@@ -576,6 +578,14 @@ function App() {
     });
   }, [activeSegmentId]);
 
+  // Closes the expanded chip editor if its segment was deleted (from the
+  // editor itself, or from the sidebar's own delete button)
+  useEffect(() => {
+    if (expandedSegmentId && !segments.some(s => s.id === expandedSegmentId)) {
+      setExpandedSegmentId(null);
+    }
+  }, [segments, expandedSegmentId]);
+
   const toggleLoop = (id: string) => {
     if (activeSegmentId === id) {
       setActiveSegmentId(null);
@@ -653,6 +663,8 @@ function App() {
       videoRef.current.playbackRate = speed;
     }
   };
+
+  const expandedSegment = segments.find(s => s.id === expandedSegmentId) || null;
 
   return (
     <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -843,18 +855,67 @@ function App() {
             {segments.length > 0 && (
               <div className="loop-strip">
                 {segments.map(s => (
-                  <button
+                  <div
                     key={s.id}
                     ref={(el) => { loopChipRefs.current[s.id] = el; }}
-                    className={`loop-chip ${activeSegmentId === s.id ? 'active' : ''}`}
+                    className={`loop-chip ${activeSegmentId === s.id ? 'active' : ''} ${expandedSegmentId === s.id ? 'expanded' : ''}`}
                     style={{ '--segment-color': s.color } as any}
-                    onClick={() => toggleLoop(s.id)}
                   >
-                    {activeSegmentId === s.id && <RotateCcw size={13} className="spinning" />}
-                    <span className="loop-chip-dot" />
-                    <span className="loop-chip-name">{s.name}</span>
-                  </button>
+                    <button className="loop-chip-main" onClick={() => toggleLoop(s.id)}>
+                      {activeSegmentId === s.id && <RotateCcw size={13} className="spinning" />}
+                      <span className="loop-chip-dot" />
+                      <span className="loop-chip-name">{s.name}</span>
+                    </button>
+                    <button
+                      className="loop-chip-toggle"
+                      title="Edit segment"
+                      onClick={() => setExpandedSegmentId(prev => prev === s.id ? null : s.id)}
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                  </div>
                 ))}
+              </div>
+            )}
+
+            {expandedSegment && (
+              <div className="loop-editor">
+                <div className="loop-editor-header">
+                  <div className="segment-color-dot" style={{ '--segment-color': expandedSegment.color } as any} />
+                  <input
+                    className="segment-name-input"
+                    value={expandedSegment.name}
+                    onChange={(e) => setSegments(segments.map(seg => seg.id === expandedSegment.id ? { ...seg, name: e.target.value } : seg))}
+                  />
+                  <button className="loop-editor-close" onClick={() => setExpandedSegmentId(null)}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="segment-times">
+                  <div className="time-adjust-group">
+                    <div className="time-label">Start: {formatTime(expandedSegment.start)}</div>
+                    <div className="adjust-buttons">
+                      <button onClick={() => updateSegment(expandedSegment.id, 'start', expandedSegment.start - 1)}>-1s</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'start', expandedSegment.start - 0.05)}>-50ms</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'start', expandedSegment.start + 0.05)}>+50ms</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'start', expandedSegment.start + 1)}>+1s</button>
+                    </div>
+                  </div>
+                  <div className="time-adjust-group">
+                    <div className="time-label">End: {formatTime(expandedSegment.end)}</div>
+                    <div className="adjust-buttons">
+                      <button onClick={() => updateSegment(expandedSegment.id, 'end', expandedSegment.end - 1)}>-1s</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'end', expandedSegment.end - 0.05)}>-50ms</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'end', expandedSegment.end + 0.05)}>+50ms</button>
+                      <button onClick={() => updateSegment(expandedSegment.id, 'end', expandedSegment.end + 1)}>+1s</button>
+                    </div>
+                  </div>
+                </div>
+                <div className="segment-actions">
+                  <button onClick={() => setSegments(segments.filter(seg => seg.id !== expandedSegment.id))} className="btn-delete">
+                    <Trash2 size={16} /> Delete
+                  </button>
+                </div>
               </div>
             )}
 

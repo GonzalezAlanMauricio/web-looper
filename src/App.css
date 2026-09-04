@@ -292,27 +292,70 @@ video {
   flex-shrink: 0;
   scroll-snap-align: center;
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  align-items: stretch;
   background: var(--bg-card);
-  color: var(--text-dim);
   border: 1px solid var(--border);
   border-radius: 1.5rem;
-  padding: 0.5rem 0.9rem;
+  overflow: hidden;
+}
+
+.loop-chip-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  padding: 0.5rem 0.6rem 0.5rem 0.9rem;
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 
+.loop-chip-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  border-left: 1px solid var(--border);
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+}
+.loop-chip-toggle svg { transition: transform 0.2s ease; }
+
 .loop-chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--segment-color); flex-shrink: 0; }
 
-.loop-chip.active {
-  background: var(--segment-color);
-  border-color: var(--segment-color);
-  color: white;
-}
+.loop-chip.expanded { border-color: var(--accent); }
+.loop-chip.expanded .loop-chip-toggle { color: var(--accent); }
+.loop-chip.expanded .loop-chip-toggle svg { transform: rotate(180deg); }
+
+.loop-chip.active { background: var(--segment-color); border-color: var(--segment-color); }
+.loop-chip.active .loop-chip-main { color: white; }
 .loop-chip.active .loop-chip-dot { background: white; }
+.loop-chip.active .loop-chip-toggle { color: white; border-left-color: rgba(255, 255, 255, 0.35); }
+
+/* Inline segment editor: expands below the strip only for the chip whose
+   chevron was tapped, so the strip itself stays compact by default. */
+.loop-editor { display: none; }
+.loop-editor-header { display: flex; align-items: center; gap: 0.5rem; }
+.loop-editor-header .segment-color-dot { width: 8px; height: 8px; }
+.loop-editor-header .segment-name-input { flex: 1; }
+.loop-editor-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2d2d39;
+  color: var(--text-dim);
+  border: none;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
 
 /* Timeline */
 .timeline-wrapper { margin-bottom: 0.5rem; }
@@ -507,6 +550,15 @@ video {
     z-index: 1;
   }
   .loop-strip::-webkit-scrollbar { display: none; }
+
+  .loop-editor {
+    display: block;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem max(1rem, env(safe-area-inset-right)) 0.9rem max(1rem, env(safe-area-inset-left));
+  }
+  .loop-editor-header { margin-bottom: 0.6rem; }
+  .loop-editor .segment-times { margin-bottom: 0.6rem; }
 
   .player-ui {
     padding: 1.5rem max(1rem, env(safe-area-inset-right)) calc(1.75rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
